@@ -102,8 +102,6 @@ Exemplo de uso:
 
 ---
 
----
-
 ## 👩‍💻 Autora
 
 **Rayssa Fialho**  
