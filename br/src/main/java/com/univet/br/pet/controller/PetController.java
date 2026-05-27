@@ -48,4 +48,8 @@ public class PetController {
     public void deletar(@PathVariable String id){
         service.deletar(id);
     }
+    @GetMapping("/status")
+    public String status() {
+        return "Pet Service online";
+    }
 }
