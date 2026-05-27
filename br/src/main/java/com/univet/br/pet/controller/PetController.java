@@ -52,4 +52,8 @@ public class PetController {
     public String status() {
         return "Pet Service online";
     }
+    @GetMapping("/")
+    public String home() {
+        return "API Pet online";
+    }
 }
