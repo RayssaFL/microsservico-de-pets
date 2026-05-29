@@ -370,16 +370,16 @@
     <h2 class="secao-titulo">Agendamentos</h2>
 
     <div class="card">
-      <strong>Novo agendamento</strong>
+      <strong id="form-agendamento-titulo">Novo agendamento</strong>
       <hr class="separador"/>
       <div class="form-grid">
         <div>
           <label>ID do Cliente</label>
-          <input id="a-clienteId" type="number" placeholder="Ex: 1"/>
+          <input id="a-clienteId" type="text" placeholder="Cole o ID do tutor"/>
         </div>
         <div>
           <label>ID do Animal</label>
-          <input id="a-animalId" type="number" placeholder="Ex: 1"/>
+          <input id="a-animalId" type="text" placeholder="Cole o ID do animal"/>
         </div>
         <div class="full">
           <label>Data e hora do agendamento</label>
@@ -387,7 +387,7 @@
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-primario" onclick="criarAgendamento()">Agendar</button>
+        <button id="btn-agendamento-salvar" class="btn btn-primario" onclick="salvarAgendamento()">Agendar</button>
         <button class="btn btn-secundario" onclick="limparFormAgendamento()">Limpar</button>
       </div>
     </div>
@@ -405,11 +405,12 @@
   const API = {
     tutores:      'https://microsservicotutores-production.up.railway.app/tutores',
     pets:         'https://microsservico-de-pets-production.up.railway.app/pets',
-    agendamentos: 'http://localhost:8082/agendamentos'
+    agendamentos: 'https://microsservicoagendamentos-production.up.railway.app/agendamentos'
   };
 
   let editandoTutorId = null;
   let editandoPetId = null;
+  let editandoAgendamentoId = null;
 
   function mostrarAba(nome) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('ativo'));
@@ -430,16 +431,42 @@
   }
 
   async function req(url, method = 'GET', body = null) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
-    if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(url, opts);
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(err || `Erro ${res.status}`);
-    }
-    if (res.status === 204 || method === 'DELETE') return null;
-    return res.json();
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' }
+  };
+
+  if (body) {
+    opts.body = JSON.stringify(body);
   }
+
+  const res = await fetch(url, opts);
+
+  if (!res.ok) {
+    let mensagem = `Erro ${res.status}`;
+
+    try {
+      const erro = await res.json();
+
+      mensagem =
+        erro.message ||
+        erro.error ||
+        erro.mensagem ||
+        JSON.stringify(erro);
+    } catch {
+      const texto = await res.text();
+      if (texto) mensagem = texto;
+    }
+
+    throw new Error(mensagem);
+  }
+
+  if (res.status === 204 || method === 'DELETE') {
+    return null;
+  }
+
+  return res.json();
+}
 
   async function carregarTutores() {
     const lista = document.getElementById('lista-tutores');
@@ -606,31 +633,57 @@
     CANCELADO: 'badge-vermelho'
   };
 
+  function formatarData(dataAgendamento) {
+    return dataAgendamento ? new Date(dataAgendamento).toLocaleString('pt-BR') : '—';
+  }
+
+  function preencherDatetimeLocal(dataAgendamento) {
+    if (!dataAgendamento) return '';
+    return dataAgendamento.substring(0, 16);
+  }
+
   async function carregarAgendamentos() {
     const lista = document.getElementById('lista-agendamentos');
+
     try {
       const ags = await req(API.agendamentos);
-      if (!ags.length) { lista.innerHTML = '<div class="vazio">Nenhum agendamento cadastrado.</div>'; return; }
+
+      if (!ags.length) {
+        lista.innerHTML = '<div class="vazio">Nenhum agendamento cadastrado.</div>';
+        return;
+      }
+
       lista.innerHTML = ags.map(a => {
-        const data = a.dataAgendamento ? new Date(a.dataAgendamento).toLocaleString('pt-BR') : '—';
+        const data = formatarData(a.dataAgendamento);
+        const chegada = a.dataChegada ? formatarData(a.dataChegada) : 'Não registrada';
         const badge = STATUS_BADGE[a.status] || 'badge-cinza';
+        const podeExecutarAcoes = a.status !== 'CANCELADO';
+
         return `
           <div class="item-card">
             <div class="item-info">
               <div class="item-nome">
                 Agendamento
-                <span class="badge ${badge}">${a.status}</span>
-                ${a.confirmado ? '<span class="badge badge-verde">✓ Confirmado</span>' : ''}
+                <span class="badge ${badge}">${a.status || 'SEM STATUS'}</span>
+                ${a.confirmado ? '<span class="badge badge-verde">✓ Confirmado</span>' : '<span class="badge badge-cinza">Não confirmado</span>'}
               </div>
-              <div class="item-detalhe">Cliente ID: ${a.clienteId} &nbsp;|&nbsp; Animal ID: ${a.animalId}</div>
+              <div class="item-detalhe">Cliente ID: ${a.clienteId ?? '—'} &nbsp;|&nbsp; Animal ID: ${a.animalId ?? '—'}</div>
               <div class="item-detalhe">Data: ${data}</div>
+              <div class="item-detalhe">Chegada: ${chegada}</div>
               <div class="item-detalhe" style="font-size:0.72rem;color:#aaa;margin-top:4px">ID: ${a.agendamentoId}</div>
             </div>
-            <div class="item-acoes" style="flex-direction:column">
-              ${a.status === 'AGENDADO' ? `
+            <div class="item-acoes" style="flex-direction:column; align-items:stretch">
+              <button class="btn btn-secundario" style="font-size:0.8rem;padding:0.4rem 0.8rem" onclick="editarAgendamento('${a.agendamentoId}')">Editar</button>
+
+              ${podeExecutarAcoes ? `
                 <button class="btn btn-secundario" style="font-size:0.8rem;padding:0.4rem 0.8rem" onclick="confirmarAgendamento('${a.agendamentoId}')">Confirmar</button>
-                <button class="btn btn-perigo" style="font-size:0.8rem;padding:0.4rem 0.8rem;margin-top:4px" onclick="cancelarAgendamento('${a.agendamentoId}')">Cancelar</button>
+                <button class="btn btn-secundario" style="font-size:0.8rem;padding:0.4rem 0.8rem" onclick="registrarChegada('${a.agendamentoId}')">Registrar chegada</button>
+                <button class="btn btn-secundario" style="font-size:0.8rem;padding:0.4rem 0.8rem" onclick="marcarComoRealizado('${a.agendamentoId}')">Realizado</button>
+                <button class="btn btn-perigo" style="font-size:0.8rem;padding:0.4rem 0.8rem" onclick="cancelarAgendamento('${a.agendamentoId}')">Cancelar manual</button>
+                <button class="btn btn-perigo" style="font-size:0.8rem;padding:0.4rem 0.8rem" onclick="cancelarOperacional('${a.agendamentoId}')">Cancelar operacional</button>
               ` : ''}
+
+              <button class="btn btn-perigo" style="font-size:0.8rem;padding:0.4rem 0.8rem" onclick="deletarAgendamento('${a.agendamentoId}')">Excluir</button>
             </div>
           </div>
         `;
@@ -640,19 +693,76 @@
     }
   }
 
+  async function salvarAgendamento() {
+    if (editandoAgendamentoId) {
+      await atualizarAgendamento();
+    } else {
+      await criarAgendamento();
+    }
+  }
+
   async function criarAgendamento() {
     const dataVal = document.getElementById('a-data').value;
+    const clienteId = document.getElementById('a-clienteId').value;
+    const animalId = document.getElementById('a-animalId').value;
+
+    if (!clienteId || !animalId || !dataVal) {
+      toast('Preencha cliente, animal e data do agendamento.', 'erro');
+      return;
+    }
+
     const ag = {
-      clienteId:       parseInt(document.getElementById('a-clienteId').value),
-      animalId:        parseInt(document.getElementById('a-animalId').value),
-      dataAgendamento: dataVal ? new Date(dataVal).toISOString().slice(0,19) : null
+        clienteId: document.getElementById('a-clienteId').value.trim(),
+        animalId: document.getElementById('a-animalId').value.trim(),
+        dataAgendamento: dataVal ? new Date(dataVal).toISOString().slice(0,19) : null
     };
+
     try {
       await req(API.agendamentos, 'POST', ag);
       toast('Agendamento criado com sucesso!');
       limparFormAgendamento();
       carregarAgendamentos();
-    } catch(e) { toast(e.message, 'erro'); }
+    } catch(e) {
+      toast(e.message, 'erro');
+    }
+  }
+
+  async function editarAgendamento(id) {
+    try {
+      const a = await req(`${API.agendamentos}/${id}`);
+
+      document.getElementById('a-clienteId').value = a.clienteId ?? '';
+      document.getElementById('a-animalId').value = a.animalId ?? '';
+      document.getElementById('a-data').value = preencherDatetimeLocal(a.dataAgendamento);
+
+      editandoAgendamentoId = id;
+      document.getElementById('form-agendamento-titulo').textContent = 'Editando agendamento';
+      document.getElementById('btn-agendamento-salvar').textContent = 'Salvar alterações';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch(e) {
+      toast(e.message, 'erro');
+    }
+  }
+
+  async function atualizarAgendamento() {
+    const dataVal = document.getElementById('a-data').value;
+    const clienteId = document.getElementById('a-clienteId').value;
+    const animalId = document.getElementById('a-animalId').value;
+
+    const ag = {
+      clienteId: clienteId ? parseInt(clienteId) : null,
+      animalId: animalId ? parseInt(animalId) : null,
+      dataAgendamento: dataVal ? new Date(dataVal).toISOString().slice(0,19) : null
+    };
+
+    try {
+      await req(`${API.agendamentos}/${editandoAgendamentoId}`, 'PATCH', ag);
+      toast('Agendamento atualizado com sucesso!');
+      limparFormAgendamento();
+      carregarAgendamentos();
+    } catch(e) {
+      toast(e.message, 'erro');
+    }
   }
 
   async function confirmarAgendamento(id) {
@@ -660,22 +770,76 @@
       await req(`${API.agendamentos}/${id}/confirmar`, 'PATCH');
       toast('Agendamento confirmado!');
       carregarAgendamentos();
-    } catch(e) { toast(e.message, 'erro'); }
+    } catch(e) {
+      toast(e.message, 'erro');
+    }
+  }
+
+  async function registrarChegada(id) {
+    try {
+      await req(`${API.agendamentos}/${id}/chegada`, 'PATCH');
+      toast('Chegada registrada!');
+      carregarAgendamentos();
+    } catch(e) {
+      toast(e.message, 'erro');
+    }
+  }
+
+  async function marcarComoRealizado(id) {
+    if (!confirm('Marcar este agendamento como realizado?')) return;
+
+    try {
+      await req(`${API.agendamentos}/${id}/realizado`, 'PATCH');
+      toast('Agendamento marcado como realizado!');
+      carregarAgendamentos();
+    } catch(e) {
+      toast(e.message, 'erro');
+    }
   }
 
   async function cancelarAgendamento(id) {
-    if (!confirm('Cancelar este agendamento?')) return;
+    if (!confirm('Cancelar manualmente este agendamento?')) return;
+
     try {
       await req(`${API.agendamentos}/${id}/cancelar-manual`, 'PATCH');
-      toast('Agendamento cancelado.');
+      toast('Agendamento cancelado manualmente.');
       carregarAgendamentos();
-    } catch(e) { toast(e.message, 'erro'); }
+    } catch(e) {
+      toast(e.message, 'erro');
+    }
+  }
+
+  async function cancelarOperacional(id) {
+    if (!confirm('Cancelar este agendamento por motivo operacional?')) return;
+
+    try {
+      await req(`${API.agendamentos}/${id}/cancelar-operacional`, 'PATCH');
+      toast('Agendamento cancelado por motivo operacional.');
+      carregarAgendamentos();
+    } catch(e) {
+      toast(e.message, 'erro');
+    }
+  }
+
+  async function deletarAgendamento(id) {
+    if (!confirm('Deseja excluir este agendamento do banco?')) return;
+
+    try {
+      await req(`${API.agendamentos}/${id}`, 'DELETE');
+      toast('Agendamento excluído.');
+      carregarAgendamentos();
+    } catch(e) {
+      toast(e.message, 'erro');
+    }
   }
 
   function limparFormAgendamento() {
     document.getElementById('a-clienteId').value = '';
     document.getElementById('a-animalId').value = '';
     document.getElementById('a-data').value = '';
+    editandoAgendamentoId = null;
+    document.getElementById('form-agendamento-titulo').textContent = 'Novo agendamento';
+    document.getElementById('btn-agendamento-salvar').textContent = 'Agendar';
   }
 
   carregarTutores();
